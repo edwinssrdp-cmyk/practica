@@ -22,6 +22,11 @@ def init_connections():
         "https://www.googleapis.com/auth/drive"
     ]
     creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # CORRECCIÓN PARA EL PADDING: Asegurar que la llave privada tenga los saltos de línea correctos (\n)
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     
