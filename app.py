@@ -4,6 +4,7 @@ from google.genai import types
 import requests
 import datetime
 import random
+import time
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
@@ -23,12 +24,11 @@ except Exception as e:
     st.error(f"Error al iniciar Gemini: {e}")
     st.stop()
 
-# URL del Webhook de Google Apps Script (lo configuraremos en un segundo)
+# URL del Webhook de Google Apps Script (opcional)
 WEBHOOK_URL = st.secrets.get("SHEET_WEBHOOK_URL", "")
 
 # --- FUNCIONES AUXILIARES ---
 def get_questions_from_sheet():
-    # Si tienes un webhook configurado, podemos pedir las preguntas, o usar un banco por defecto
     return [
         "What did you do last weekend that was really fun?",
         "If you could travel anywhere next summer, where would you go and why?",
@@ -99,14 +99,29 @@ if submitted:
                         )
                     )
 
-                response = gemini_client.models.generate_content(
-                    model='gemini-3.8-flash',
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.3
-                    )
-                )
+                # Llamada a Gemini con reintento automático por alta demanda (503)
+                response = None
+                max_retries = 3
+                retry_delay = 2
+                
+                for attempt in range(max_retries):
+                    try:
+                        response = gemini_client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=contents,
+                            config=types.GenerateContentConfig(
+                                system_instruction=system_instruction,
+                                temperature=0.3
+                            )
+                        )
+                        break 
+                    except Exception as api_err:
+                        if "503" in str(api_err) and attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            retry_delay *= 2 
+                            continue
+                        else:
+                            raise api_err 
                 
                 evaluation_result = response.text
 
