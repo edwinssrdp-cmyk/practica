@@ -16,7 +16,6 @@ st.set_page_config(
 # --- CONFIGURAR CREDENCIALES ---
 @st.cache_resource
 def init_connections():
-    # Scopes necesarios para Google Sheets y Drive
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -25,7 +24,15 @@ def init_connections():
     # Cargar los secretos de Google desde Streamlit
     creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Autenticación moderna con google-auth (evita errores de padding base64)
+    # LIMPIEZA AUTOMÁTICA DE LA LLAVE PRIVADA (Evita errores de PEM y Padding)
+    private_key = creds_dict.get("private_key", "")
+    # Reemplazar escapes literales de nueva línea si los hubiera
+    private_key = private_key.replace("\\n", "\n")
+    # Limpiar espacios en blanco al inicio o final de cada línea
+    lines = [line.strip() for line in private_key.splitlines() if line.strip()]
+    creds_dict["private_key"] = "\n".join(lines) + "\n"
+
+    # Autenticación segura
     creds = service_account.Credentials.from_service_account_info(
         creds_dict, scopes=scopes
     )
@@ -80,7 +87,6 @@ with st.form("evaluation_form"):
     st.markdown("### 🎙️ Voice Recording / Grabación de Voz")
     st.markdown("Haz clic en el botón de grabación para registrar tu respuesta oral:")
     
-    # Componente nativo de Streamlit para grabar audio directo desde el navegador (PC o Móvil)
     audio_file = st.audio_input("Graba tu voz respondiendo la pregunta")
     
     submitted = st.form_submit_button("🚀 Submit for Feedback / Enviar para Evaluación")
@@ -98,7 +104,6 @@ if submitted:
                     audio_bytes = audio_file.read()
                     mime_type = audio_file.type 
 
-                # Instrucción del sistema para Gemini
                 system_instruction = (
                     "You are a supportive, encouraging English Language Teacher evaluating a Pre-Intermediate 2 (CEFR A2+/B1 level) student. "
                     "Structure your feedback in friendly Spanish, using English for examples/corrections:\n\n"
