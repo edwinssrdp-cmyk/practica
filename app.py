@@ -99,7 +99,7 @@ if submitted:
                         )
                     )
 
-                # Llamada a Gemini con reintento automático por alta demanda (503)
+                # Llamada a Gemini con el modelo actualizado y reintento automático
                 response = None
                 max_retries = 3
                 retry_delay = 2
@@ -107,7 +107,7 @@ if submitted:
                 for attempt in range(max_retries):
                     try:
                         response = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model='gemini-3.8-flash',
                             contents=contents,
                             config=types.GenerateContentConfig(
                                 system_instruction=system_instruction,
