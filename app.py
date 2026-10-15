@@ -99,7 +99,7 @@ if submitted:
                         )
                     )
 
-                # Llamada usando el modelo estable gemini-1.5-flash
+                # Llamada usando el alias universal gemini-flash-latest
                 response = None
                 max_retries = 3
                 retry_delay = 2
@@ -107,7 +107,7 @@ if submitted:
                 for attempt in range(max_retries):
                     try:
                         response = gemini_client.models.generate_content(
-                            model='gemini-1.5-flash',
+                            model='gemini-flash-latest',
                             contents=contents,
                             config=types.GenerateContentConfig(
                                 system_instruction=system_instruction,
