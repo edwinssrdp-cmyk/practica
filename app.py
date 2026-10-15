@@ -1,10 +1,10 @@
 import streamlit as st
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2 import service_account
 from google import genai
 from google.genai import types
 import datetime
-import json
+import random
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
@@ -13,28 +13,29 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- CONFIGURAR CREDENCIALES DESDE SECRETS DE STREAMLIT ---
+# --- CONFIGURAR CREDENCIALES ---
 @st.cache_resource
 def init_connections():
-    # Conexión a Google Sheets usando los secretos seguros de Streamlit
-    scope = [
-        "https://spreadsheets.google.com/feeds",
+    # Scopes necesarios para Google Sheets y Drive
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
+    
+    # Cargar los secretos de Google desde Streamlit
     creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # CORRECCIÓN PARA EL PADDING: Asegurar que la llave privada tenga los saltos de línea correctos (\n)
-    if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    # Autenticación moderna con google-auth (evita errores de padding base64)
+    creds = service_account.Credentials.from_service_account_info(
+        creds_dict, scopes=scopes
+    )
     client = gspread.authorize(creds)
     
     # Abrir la hoja de cálculo
     sheet_name = st.secrets["SHEET_NAME"]
     spreadsheet = client.open(sheet_name)
     
-    # Inicializar cliente de Gemini con la API Key del usuario
+    # Inicializar cliente de Gemini con la API Key
     gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     
     return spreadsheet, gemini_client
@@ -52,7 +53,6 @@ def get_random_question():
         questions = worksheet.col_values(1)[1:] # Ignorar cabecera
         if not questions:
             return "Tell me about your favorite daily routine."
-        import random
         return random.choice(questions)
     except Exception:
         return "What did you do last weekend?"
@@ -96,7 +96,7 @@ if submitted:
                 
                 if audio_file is not None:
                     audio_bytes = audio_file.read()
-                    mime_type = audio_file.type # Generalmente audio/wav o audio/webm
+                    mime_type = audio_file.type 
 
                 # Instrucción del sistema para Gemini
                 system_instruction = (
@@ -112,7 +112,6 @@ if submitted:
                     f"Pregunta asignada: \"{st.session_state.current_question}\"\nRespuesta escrita del estudiante: \"{written_response}\"\n\nPor favor evalúa el texto y el audio adjunto."
                 ]
 
-                # Si hay audio, lo enviamos de forma nativa a Gemini
                 if audio_bytes:
                     contents.append(
                         types.Part.from_bytes(
@@ -121,7 +120,6 @@ if submitted:
                         )
                     )
 
-                # Llamada a Gemini 2.5 Flash
                 response = gemini_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=contents,
@@ -135,9 +133,6 @@ if submitted:
 
                 # Guardar en Google Sheets (Pestaña Respuestas)
                 respuestas_sheet = spreadsheet.worksheet("Respuestas")
-                
-                # Opcional: Subir el audio a Drive o guardar un texto indicativo. 
-                # Como guardaremos los datos en la hoja, registramos la entrega:
                 audio_status = "Audio registrado y evaluado" if audio_bytes else "Sin audio"
                 
                 respuestas_sheet.append_row([
