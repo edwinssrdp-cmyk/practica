@@ -1,8 +1,7 @@
 import streamlit as st
-import gspread
-from google.oauth2 import service_account
 from google import genai
 from google.genai import types
+import requests
 import datetime
 import random
 
@@ -13,56 +12,30 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- CONFIGURAR CREDENCIALES ---
+# Inicializar cliente de Gemini con la API Key de los Secrets
 @st.cache_resource
-def init_connections():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    
-    # Cargar los secretos de Google desde Streamlit
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    
-    # LIMPIEZA AUTOMÁTICA DE LA LLAVE PRIVADA (Evita errores de PEM y Padding)
-    private_key = creds_dict.get("private_key", "")
-    # Reemplazar escapes literales de nueva línea si los hubiera
-    private_key = private_key.replace("\\n", "\n")
-    # Limpiar espacios en blanco al inicio o final de cada línea
-    lines = [line.strip() for line in private_key.splitlines() if line.strip()]
-    creds_dict["private_key"] = "\n".join(lines) + "\n"
-
-    # Autenticación segura
-    creds = service_account.Credentials.from_service_account_info(
-        creds_dict, scopes=scopes
-    )
-    client = gspread.authorize(creds)
-    
-    # Abrir la hoja de cálculo
-    sheet_name = st.secrets["SHEET_NAME"]
-    spreadsheet = client.open(sheet_name)
-    
-    # Inicializar cliente de Gemini con la API Key
-    gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    
-    return spreadsheet, gemini_client
+def init_gemini():
+    return genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 try:
-    spreadsheet, gemini_client = init_connections()
+    gemini_client = init_gemini()
 except Exception as e:
-    st.error(f"Error de configuración inicial: {e}")
+    st.error(f"Error al iniciar Gemini: {e}")
     st.stop()
 
+# URL del Webhook de Google Apps Script (lo configuraremos en un segundo)
+WEBHOOK_URL = st.secrets.get("SHEET_WEBHOOK_URL", "")
+
 # --- FUNCIONES AUXILIARES ---
-def get_random_question():
-    try:
-        worksheet = spreadsheet.worksheet("Preguntas")
-        questions = worksheet.col_values(1)[1:] # Ignorar cabecera
-        if not questions:
-            return "Tell me about your favorite daily routine."
-        return random.choice(questions)
-    except Exception:
-        return "What did you do last weekend?"
+def get_questions_from_sheet():
+    # Si tienes un webhook configurado, podemos pedir las preguntas, o usar un banco por defecto
+    return [
+        "What did you do last weekend that was really fun?",
+        "If you could travel anywhere next summer, where would you go and why?",
+        "Have you ever had a challenging day at work or school? What happened?",
+        "What are your plans for the upcoming holiday?",
+        "Tell me about your favorite daily routine and why you like it."
+    ]
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🎓 Pre-Intermediate 2 Speaking & Writing Practice")
@@ -70,7 +43,8 @@ st.markdown("Responde la siguiente pregunta por escrito y graba tu voz para reci
 
 # Inicializar pregunta aleatoria en la sesión del alumno
 if "current_question" not in st.session_state:
-    st.session_state.current_question = get_random_question()
+    questions_pool = get_questions_from_sheet()
+    st.session_state.current_question = random.choice(questions_pool)
 
 # Caja de pregunta
 st.info(f"**Pregunta asignada:**\n\n{st.session_state.current_question}")
@@ -136,18 +110,16 @@ if submitted:
                 
                 evaluation_result = response.text
 
-                # Guardar en Google Sheets (Pestaña Respuestas)
-                respuestas_sheet = spreadsheet.worksheet("Respuestas")
-                audio_status = "Audio registrado y evaluado" if audio_bytes else "Sin audio"
-                
-                respuestas_sheet.append_row([
-                    str(datetime.datetime.now()),
-                    student_name,
-                    st.session_state.current_question,
-                    written_response,
-                    audio_status,
-                    evaluation_result
-                ])
+                # Enviar a Google Sheets mediante Webhook (si está configurado)
+                if WEBHOOK_URL:
+                    payload = {
+                        "date": str(datetime.datetime.now()),
+                        "studentName": student_name,
+                        "question": st.session_state.current_question,
+                        "writtenResponse": written_response,
+                        "evaluation": evaluation_result
+                    }
+                    requests.post(WEBHOOK_URL, json=payload)
 
                 st.success("¡Evaluación completada con éxito!")
                 st.markdown("### 📋 Retroalimentación de tu Profesor:")
